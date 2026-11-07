@@ -55,7 +55,13 @@ def logout(base_url, username, quiet=False):
 
 
 def login(base_url, account_index):
-    values = load_env("/run/secrets/karen.env")
+    env_path = "/run/secrets/karen.env"
+    if not os.path.isfile(env_path):
+        for candidate in ("/app/.env", ".env"):
+            if os.path.isfile(candidate):
+                env_path = candidate
+                break
+    values = load_env(env_path)
     username = values.get(f"APPLE_ID_{account_index}", "")
     password = values.get(f"APPLE_PASS_{account_index}", "")
     if not username or not password:

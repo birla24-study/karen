@@ -207,7 +207,13 @@ def main():
     parser.add_argument("--out", default="/out")
     args = parser.parse_args()
 
-    env = load_env(args.env)
+    env_path = args.env
+    if not os.path.isfile(env_path):
+        for candidate in ("/app/.env", ".env"):
+            if os.path.isfile(candidate):
+                env_path = candidate
+                break
+    env = load_env(env_path)
     index, tried = 1, 0
     while env.get("APPLE_ID_%d" % index):
         email, password = env["APPLE_ID_%d" % index], env.get("APPLE_PASS_%d" % index, "")

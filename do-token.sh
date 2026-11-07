@@ -9,7 +9,10 @@ set -euo pipefail
 KAREN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$KAREN/bot/state"
 docker build -q -t karen-token:local "$KAREN/token" >/dev/null
-docker run --rm \
-  -v "$KAREN/.env:/run/secrets/karen.env:ro" \
-  -v "$KAREN/bot/state:/out" \
-  karen-token:local
+
+CID="$(docker create karen-token:local)"
+docker cp "$KAREN/.env" "$CID:/app/.env"
+docker cp "$KAREN/.env" "$CID:/run/secrets/karen.env" 2>/dev/null || true
+docker start -a "$CID"
+docker cp "$CID:/out/media-user-token" "$KAREN/bot/state/media-user-token" 2>/dev/null || true
+docker rm -f "$CID" >/dev/null 2>&1 || true

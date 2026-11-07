@@ -22,10 +22,15 @@ case "$ACTION" in
     ;;
   login)
     [[ "$TARGET" =~ ^[0-9]+$ ]] || { echo "account index required" >&2; exit 2; }
-    docker run --rm -i --network "$NET" \
+    CID="$(docker create -i --network "$NET" \
       -e RELOGIN="${RELOGIN:-0}" \
-      -v "$KAREN/.env:/run/secrets/karen.env:ro" \
-      karen-login:local login "$MANAGER_URL" "$TARGET"
+      karen-login:local login "$MANAGER_URL" "$TARGET")"
+    docker cp "$KAREN/.env" "$CID:/app/.env"
+    docker cp "$KAREN/.env" "$CID:/run/secrets/karen.env" 2>/dev/null || true
+    docker start -a -i "$CID"
+    STATUS=$?
+    docker rm -f "$CID" >/dev/null 2>&1 || true
+    exit $STATUS
     ;;
   logout)
     [[ -n "$TARGET" ]] || { echo "username required" >&2; exit 2; }
