@@ -41,7 +41,7 @@ func mediaUserToken() string {
 
 func autoMediaToken() string {
 	info, err := os.Stat(mediaTokenFile)
-	if err != nil {
+	if err != nil || info.IsDir() {
 		return ""
 	}
 	mediaTok.Lock()

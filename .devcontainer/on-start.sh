@@ -28,6 +28,16 @@ clean_num() {
   fi
 }
 
+if [[ -d .env ]]; then
+  echo "==> [Codespaces] Detected .env is an invalid directory; removing..."
+  rm -rf .env
+fi
+
+if [[ -d bot/config.yaml ]]; then
+  echo "==> [Codespaces] Detected bot/config.yaml is an invalid directory; removing..."
+  rm -rf bot/config.yaml
+fi
+
 if [[ ! -f .env ]]; then
   # Auto-generate .env from Codespaces secrets if injected as environment variables
   if [[ -n "${TELEGRAM_BOT_TOKEN:-}" || -n "${BOT_TOKEN:-}" ]]; then

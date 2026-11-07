@@ -10,6 +10,8 @@ import urllib.request
 
 def load_env(path):
     values = {}
+    if not os.path.isfile(path):
+        return values
     with open(path, "r", encoding="utf-8") as handle:
         for raw in handle:
             line = raw.strip()

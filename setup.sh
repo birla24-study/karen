@@ -7,10 +7,18 @@ set -euo pipefail
 KAREN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$KAREN"
 
+if [[ -d .env ]]; then
+  echo "ERROR: .env is a directory, not a file. Remove it with 'rm -rf .env' and create a valid .env." >&2
+  exit 1
+fi
+
 if [[ ! -f .env ]]; then
   echo "ERROR: .env not found. Copy .env.example to .env and fill it in." >&2
   exit 1
 fi
+
+# Clean up stale file-as-directory collision if Docker ever created one
+[[ -d bot/config.yaml ]] && rm -rf bot/config.yaml
 
 # 1. Generate bot/config.yaml + docker-compose.override.yml from .env
 ./generate.sh
@@ -64,6 +72,7 @@ DC=(docker compose --env-file /dev/null)
 # in .env. RELOGIN=1 logs current accounts out before signing them in again.
 mkdir -p .logins
 ACCOUNT_REGISTRY=".logins/v3-accounts.txt"
+[[ -d "$ACCOUNT_REGISTRY" ]] && rm -rf "$ACCOUNT_REGISTRY"
 if [[ -f "$ACCOUNT_REGISTRY" ]]; then
   while IFS= read -r old_id || [[ -n "$old_id" ]]; do
     [[ -z "$old_id" ]] && continue

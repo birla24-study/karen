@@ -49,6 +49,8 @@ def b64dec(data):
 
 def load_env(path):
     values = {}
+    if not os.path.isfile(path):
+        return values
     with open(path, "r", encoding="utf-8") as handle:
         for raw in handle:
             line = raw.strip()
@@ -194,6 +196,9 @@ class AppleMusicAuth:
 def write_token(out_dir, token):
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "media-user-token")
+    if os.path.isdir(path):
+        import shutil
+        shutil.rmtree(path)
     tmp = path + ".tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as handle:

@@ -196,4 +196,5 @@ echo "Wrote docker-compose.override.yml"
 # break them — see the comment in docker-compose.yml). Gitignored; empty/missing
 # files are treated as "defaults" by the bot on first load.
 mkdir -p bot/state
-echo "Ensured bot/state/ exists"
+mkdir -p bot/downloads
+echo "Ensured bot/state/ and bot/downloads/ exist"
