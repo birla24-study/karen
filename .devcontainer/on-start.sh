@@ -26,6 +26,7 @@ DUMP_CHANNEL_ID=${DUMP_CHANNEL_ID:-0}
 GOFILE_TOKEN="${GOFILE_TOKEN:-}"
 DATABASE_URL="${DATABASE_URL:-}"
 RIP_FLUSH_THRESHOLD_GB=${RIP_FLUSH_THRESHOLD_GB:-20}
+TELEGRAM_DOWNLOAD_MAX_GB=${TELEGRAM_DOWNLOAD_MAX_GB:-5}
 APPLE_ID_1="${APPLE_ID_1:-}"
 APPLE_PASS_1="${APPLE_PASS_1:-}"
 APPLE_ID_2="${APPLE_ID_2:-}"
@@ -53,4 +54,20 @@ docker compose --env-file /dev/null up -d
 
 echo "==> [Codespaces] Karen bot is running in the background."
 echo "==> Tail logs anytime with: docker compose logs -f bot"
+
+# Notify the primary admin on Telegram that Karen is awake and ready
+load_env_val() {
+  local key="$1"
+  grep -E "^${key}=" .env 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d '"'\'' ' || true
+}
+TG_TOKEN="$(load_env_val TELEGRAM_BOT_TOKEN)"
+ADMINS="$(load_env_val ADMIN_IDS)"
+FIRST_ADMIN="$(echo "$ADMINS" | cut -d',' -f1)"
+
+if [[ -n "$TG_TOKEN" && -n "$FIRST_ADMIN" ]]; then
+  curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+    -d "chat_id=${FIRST_ADMIN}" \
+    -d "text=🟢 Karen is online and ready for downloads!" > /dev/null || true
+fi
+
 
