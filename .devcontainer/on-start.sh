@@ -9,30 +9,74 @@ until docker info > /dev/null 2>&1; do
   sleep 1
 done
 
+clean_str() {
+  local val="${1:-}"
+  if [[ "$val" == "-" || "$val" == "none" || "$val" == "null" ]]; then
+    echo ""
+  else
+    echo "$val"
+  fi
+}
+
+clean_num() {
+  local val="${1:-}"
+  local default="${2:-0}"
+  if [[ "$val" =~ ^-?[0-9]+$ ]]; then
+    echo "$val"
+  else
+    echo "$default"
+  fi
+}
+
 if [[ ! -f .env ]]; then
   # Auto-generate .env from Codespaces secrets if injected as environment variables
   if [[ -n "${TELEGRAM_BOT_TOKEN:-}" || -n "${BOT_TOKEN:-}" ]]; then
     echo "==> [Codespaces] Detected Codespaces secrets in environment; generating .env..."
-    BOT_TOKEN_VAL="${TELEGRAM_BOT_TOKEN:-${BOT_TOKEN:-}}"
+    BOT_TOKEN_VAL="$(clean_str "${TELEGRAM_BOT_TOKEN:-${BOT_TOKEN:-}}")"
+    API_ID_VAL="$(clean_num "${TELEGRAM_API_ID:-}" 0)"
+    API_HASH_VAL="$(clean_str "${TELEGRAM_API_HASH:-}")"
+    ALLOWED_CHATS_VAL="$(clean_str "${TELEGRAM_ALLOWED_CHAT_IDS:-}")"
+    ADMIN_IDS_VAL="$(clean_str "${ADMIN_IDS:-}")"
+    MEDIA_TOKEN_VAL="$(clean_str "${MEDIA_USER_TOKEN:-}")"
+    HELPER_TOKENS_VAL="$(clean_str "${HELPER_BOT_TOKENS:-}")"
+    DUMP_CHANNEL_VAL="$(clean_num "${DUMP_CHANNEL_ID:-}" 0)"
+    GOFILE_TOKEN_VAL="$(clean_str "${GOFILE_TOKEN:-}")"
+    DB_URL_VAL="$(clean_str "${DATABASE_URL:-}")"
+    FLUSH_THRESH_VAL="$(clean_num "${RIP_FLUSH_THRESHOLD_GB:-}" 20)"
+    DL_MAX_VAL="$(clean_num "${TELEGRAM_DOWNLOAD_MAX_GB:-}" 5)"
+
     cat <<EOF > .env
 TELEGRAM_BOT_TOKEN="${BOT_TOKEN_VAL}"
-TELEGRAM_API_ID=${TELEGRAM_API_ID:-0}
-TELEGRAM_API_HASH="${TELEGRAM_API_HASH:-}"
-TELEGRAM_ALLOWED_CHAT_IDS="${TELEGRAM_ALLOWED_CHAT_IDS:-}"
-ADMIN_IDS="${ADMIN_IDS:-}"
-MEDIA_USER_TOKEN="${MEDIA_USER_TOKEN:-}"
-HELPER_BOT_TOKENS="${HELPER_BOT_TOKENS:-}"
-DUMP_CHANNEL_ID=${DUMP_CHANNEL_ID:-0}
-GOFILE_TOKEN="${GOFILE_TOKEN:-}"
-DATABASE_URL="${DATABASE_URL:-}"
-RIP_FLUSH_THRESHOLD_GB=${RIP_FLUSH_THRESHOLD_GB:-20}
-TELEGRAM_DOWNLOAD_MAX_GB=${TELEGRAM_DOWNLOAD_MAX_GB:-5}
-APPLE_ID_1="${APPLE_ID_1:-}"
-APPLE_PASS_1="${APPLE_PASS_1:-}"
-APPLE_ID_2="${APPLE_ID_2:-}"
-APPLE_PASS_2="${APPLE_PASS_2:-}"
+TELEGRAM_API_ID=${API_ID_VAL}
+TELEGRAM_API_HASH="${API_HASH_VAL}"
+TELEGRAM_ALLOWED_CHAT_IDS="${ALLOWED_CHATS_VAL}"
+ADMIN_IDS="${ADMIN_IDS_VAL}"
+MEDIA_USER_TOKEN="${MEDIA_TOKEN_VAL}"
+HELPER_BOT_TOKENS="${HELPER_TOKENS_VAL}"
+DUMP_CHANNEL_ID=${DUMP_CHANNEL_VAL}
+GOFILE_TOKEN="${GOFILE_TOKEN_VAL}"
+DATABASE_URL="${DB_URL_VAL}"
+RIP_FLUSH_THRESHOLD_GB=${FLUSH_THRESH_VAL}
+TELEGRAM_DOWNLOAD_MAX_GB=${DL_MAX_VAL}
 EOF
-    echo "==> [Codespaces] .env created from Codespaces secrets."
+
+    # Dynamically append all APPLE_ID_N / APPLE_PASS_N pairs present in the environment
+    idx=1
+    while :; do
+      id_var="APPLE_ID_${idx}"
+      pass_var="APPLE_PASS_${idx}"
+      val_id="$(clean_str "${!id_var:-}")"
+      val_pass="$(clean_str "${!pass_var:-}")"
+      if [[ -n "$val_id" ]]; then
+        echo "${id_var}=\"${val_id}\"" >> .env
+        echo "${pass_var}=\"${val_pass}\"" >> .env
+        idx=$((idx + 1))
+      else
+        break
+      fi
+    done
+
+    echo "==> [Codespaces] .env created from Codespaces secrets ($((idx - 1)) Apple account(s))."
   else
     echo "==> [Codespaces] WARNING: .env not found and no Codespaces secrets detected."
     echo "==> Please copy .env.example to .env, fill in secrets, and run ./setup.sh once."
