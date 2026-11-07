@@ -1545,6 +1545,12 @@ func (b *TelegramBot) handleMessage(msg *Message) {
 		b.handleCommand(msg.Chat.ID, userID, username, cmd, args, msg.MessageID)
 		return
 	}
+	// Direct link download: if a non-command message contains Apple Music links,
+	// extract the links and any flags, and route directly to /dl.
+	if dlArgs, ok := extractDirectDownloadArgs(text); ok {
+		b.handleCommand(msg.Chat.ID, userID, username, "dl", dlArgs, msg.MessageID)
+		return
+	}
 }
 
 func (b *TelegramBot) handleCallback(cb *CallbackQuery) {
@@ -7834,6 +7840,110 @@ func parseCommand(text string) (cmd string, mention string, args []string, ok bo
 	return strings.ToLower(cmd), mention, parts[1:], true
 }
 
+// isAppleMusicURL checks if a cleaned token looks like an Apple Music or iTunes URL.
+func isAppleMusicURL(token string) bool {
+	lower := strings.ToLower(token)
+	return strings.Contains(lower, "music.apple.com/") ||
+		strings.Contains(lower, "apple.co/") ||
+		strings.Contains(lower, "itunes.apple.com/")
+}
+
+// isRecognizedDlFlag checks if a token is one of the supported /dl flags.
+// If requireHyphen is true, only flags with a leading '-' are matched.
+func isRecognizedDlFlag(token string, requireHyphen bool) bool {
+	lower := strings.ToLower(token)
+	if requireHyphen {
+		switch lower {
+		case "-aac", "-atmos", "-flac", "-art", "-nc", "-tgu", "-tgz", "-go":
+			return true
+		default:
+			return false
+		}
+	}
+	switch lower {
+	case "-aac", "aac", "-atmos", "atmos", "-flac", "flac", "-art", "art",
+		"-nc", "nc", "-tgu", "tgu", "-tgz", "tgz", "-go", "go":
+		return true
+	default:
+		return false
+	}
+}
+
+// cleanURLToken strips surrounding brackets, quotes, and trailing punctuation
+// often attached to URLs in chat messages. If the URL lacks an explicit scheme,
+// it prepends https://.
+func cleanURLToken(raw string) string {
+	s := strings.Trim(raw, `<>"'()[]{}*`)
+	for len(s) > 0 {
+		last := s[len(s)-1]
+		if last == '.' || last == ',' || last == '!' || last == '?' || last == ':' || last == ';' {
+			s = s[:len(s)-1]
+		} else {
+			break
+		}
+	}
+	s = strings.Trim(s, `<>"'()[]{}*`)
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "music.apple.com/") ||
+		strings.HasPrefix(lower, "beta.music.apple.com/") ||
+		strings.HasPrefix(lower, "classical.music.apple.com/") ||
+		strings.HasPrefix(lower, "apple.co/") ||
+		strings.HasPrefix(lower, "itunes.apple.com/") {
+		s = "https://" + s
+	}
+	return s
+}
+
+// extractDirectDownloadArgs inspects a non-command message. If it contains at least
+// one Apple Music link, it returns the args (links + flags) to be forwarded to /dl.
+func extractDirectDownloadArgs(text string) ([]string, bool) {
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return nil, false
+	}
+
+	hasURL := false
+	allRecognized := true
+	for _, f := range fields {
+		cleaned := cleanURLToken(f)
+		if isAppleMusicURL(cleaned) {
+			hasURL = true
+		} else if !isRecognizedDlFlag(f, false) {
+			allRecognized = false
+		}
+	}
+
+	if !hasURL {
+		return nil, false
+	}
+
+	var args []string
+	if allRecognized {
+		// The message consists solely of links and flags (bare or hyphenated).
+		for _, f := range fields {
+			cleaned := cleanURLToken(f)
+			if isAppleMusicURL(cleaned) {
+				args = append(args, cleaned)
+			} else {
+				args = append(args, f)
+			}
+		}
+	} else {
+		// The message includes surrounding/conversational text (e.g. share sheet title).
+		// Extract only valid Apple Music URLs and explicit hyphenated flags.
+		for _, f := range fields {
+			cleaned := cleanURLToken(f)
+			if isAppleMusicURL(cleaned) {
+				args = append(args, cleaned)
+			} else if isRecognizedDlFlag(f, true) {
+				args = append(args, f)
+			}
+		}
+	}
+
+	return args, len(args) > 0
+}
+
 func normalizeInlineSongSearchTerm(query string) string {
 	fields := strings.Fields(strings.TrimSpace(query))
 	if len(fields) < 2 {
@@ -8589,7 +8699,7 @@ func helpRich(panel string) string {
 | ` + "`/cancel_<id>`" + ` | Cancel a scheduled (deferred) rip |
 | ` + "`/help`" + ` | Show this card |
 
-> Tip: set your defaults once in ` + "`/profile`" + ` and ` + "`/dl <link>`" + ` needs nothing else.
+> Tip: set your defaults once in ` + "`/profile`" + ` and you can paste an Apple Music link directly without ` + "`/dl`" + `!
 `)
 	case "flags":
 		return strings.TrimSpace(`
@@ -8640,7 +8750,7 @@ Append to any ` + "`/dl`" + `. Default quality is **ALAC**.
 
 Rips lossless **ALAC**, **Dolby Atmos**, and **AAC** from Apple Music straight to your chat.
 
-**Quick start:** send ` + "`/dl <apple-music-link>`" + ` — that's it.
+**Quick start:** paste an Apple Music link directly or send ` + "`/dl <apple-music-link>`" + ` — that's it.
 
 Tap below for the rest, or set your defaults in ` + "`/profile`" + `.
 `)
@@ -8707,7 +8817,7 @@ Karen — Apple Music downloader
 
 Rips lossless ALAC, Dolby Atmos, and AAC from Apple Music straight to your chat.
 
-Quick start: send /dl <apple-music-link>.
+Quick start: paste an Apple Music link directly or send /dl <apple-music-link>.
 
 Commands: /dl, /check, /status, /scheduled, /profile, /stop_<id>, /cancel_<id>, /help
 Set your defaults in /profile.

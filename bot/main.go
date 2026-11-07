@@ -432,7 +432,7 @@ func resolveAppleMusicURL(rawURL string) string {
 	if strings.Contains(rawURL, "/album/") || strings.Contains(rawURL, "/playlist/") || strings.Contains(rawURL, "/station/") || strings.Contains(rawURL, "/song/") || strings.Contains(rawURL, "/music-video/") || strings.Contains(rawURL, "/artist/") {
 		return rawURL
 	}
-	if !strings.Contains(rawURL, "music.apple.com") {
+	if !strings.Contains(rawURL, "music.apple.com") && !strings.Contains(rawURL, "apple.co/") {
 		return rawURL
 	}
 	req, err := http.NewRequest("GET", rawURL, nil)
@@ -446,6 +446,12 @@ func resolveAppleMusicURL(rawURL string) string {
 		return rawURL
 	}
 	defer resp.Body.Close()
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL := resp.Request.URL.String()
+		if strings.Contains(finalURL, "/album/") || strings.Contains(finalURL, "/playlist/") || strings.Contains(finalURL, "/station/") || strings.Contains(finalURL, "/song/") || strings.Contains(finalURL, "/music-video/") || strings.Contains(finalURL, "/artist/") {
+			return finalURL
+		}
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return rawURL
