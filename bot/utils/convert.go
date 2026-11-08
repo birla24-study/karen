@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -152,6 +153,14 @@ func ConvertIfNeeded(track *task.Track, lrc string, cfg *structs.ConfigSet, cove
 	}
 	fmt.Printf("Conversion completed in %s: %s\n", time.Since(start).Truncate(time.Millisecond), filepath.Base(outPath))
 
+	if targetFmt == "flac" {
+		if lrc != "" {
+			fmt.Printf("[lyrics] Embedded lyrics in FLAC: %s\n", filepath.Base(outPath))
+		} else {
+			fmt.Printf("[lyrics] No lyrics embedded in FLAC: %s\n", filepath.Base(outPath))
+		}
+	}
+
 	if !cfg.ConvertKeepOriginal {
 		if err := os.Remove(srcPath); err != nil {
 			fmt.Println("Failed to remove original after conversion:", err)
@@ -165,4 +174,78 @@ func ConvertIfNeeded(track *task.Track, lrc string, cfg *structs.ConfigSet, cove
 		track.SavePath = outPath
 		track.SaveName = filepath.Base(outPath)
 	}
+}
+
+// HasFlacLyrics checks whether a FLAC file has lyrics embedded in its metadata tags (LYRICS or UNSYNCEDLYRICS).
+func HasFlacLyrics(ctx context.Context, flacPath string) bool {
+	if flacPath == "" {
+		return false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ffprobe",
+		"-v", "error",
+		"-show_entries", "format_tags=LYRICS:format_tags=lyrics:format_tags=UNSYNCEDLYRICS:format_tags=unsyncedlyrics",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		flacPath,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.TrimSpace(string(out))) > 0
+}
+
+// EmbedFlacLyrics losslessly injects Vorbis LYRICS into an existing FLAC file in-place using ffmpeg stream copy.
+func EmbedFlacLyrics(ffmpegPath, flacPath, lrc string) error {
+	if ffmpegPath == "" {
+		ffmpegPath = "ffmpeg"
+	}
+	tmpPath := flacPath + ".tmp.flac"
+	args := []string{
+		"-y",
+		"-i", flacPath,
+		"-map", "0",
+		"-c", "copy",
+		"-metadata", fmt.Sprintf("LYRICS=%s", normalizeLyrics(lrc)),
+		tmpPath,
+	}
+	cmd := exec.Command(ffmpegPath, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("ffmpeg stream-copy error: %v, out: %s", err, string(out))
+	}
+	if err := os.Rename(tmpPath, flacPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+// CheckOrEmbedFlacLyrics checks whether an existing FLAC file already has lyrics embedded.
+// If missing and lyrics are available with embed enabled, embeds them losslessly in-place.
+// Logs whether lyrics were already embedded, newly embedded, or not embedded.
+// Returns true if the FLAC file currently has embedded lyrics.
+func CheckOrEmbedFlacLyrics(ctx context.Context, ffmpegPath string, flacPath string, lrc string, embedEnabled bool) bool {
+	if !strings.EqualFold(filepath.Ext(flacPath), ".flac") {
+		return false
+	}
+	base := filepath.Base(flacPath)
+	if HasFlacLyrics(ctx, flacPath) {
+		fmt.Printf("[lyrics] Lyrics already embedded in FLAC: %s\n", base)
+		return true
+	}
+	if lrc != "" && embedEnabled {
+		if err := EmbedFlacLyrics(ffmpegPath, flacPath, lrc); err != nil {
+			fmt.Printf("[lyrics] Failed to embed lyrics in existing FLAC: %v\n", err)
+			return false
+		}
+		fmt.Printf("[lyrics] Embedded lyrics in existing FLAC: %s\n", base)
+		return true
+	}
+	fmt.Printf("[lyrics] No lyrics embedded in FLAC: %s\n", base)
+	return false
 }

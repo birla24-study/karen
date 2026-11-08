@@ -1208,6 +1208,9 @@ func ripTrack(track *task.Track, token string, ctx context.Context) trackOutcome
 				if err2 == nil && existsConverted {
 					track.SavePath = convertedPath
 					track.SaveName = filepath.Base(convertedPath)
+					if apputils.CheckOrEmbedFlacLyrics(ctx, cfg.FFmpegPath, convertedPath, lrc, cfg.EmbedLrc) && track.LyricsSync == "none" {
+						track.LyricsSync = "line"
+					}
 				} else {
 					convertIfNeeded(&cfg, track, lrc, trackProgress)
 				}
@@ -1226,6 +1229,9 @@ func ripTrack(track *task.Track, token string, ctx context.Context) trackOutcome
 			fmt.Println("Converted track already exists locally.")
 			track.SavePath = convertedPath
 			track.SaveName = filepath.Base(convertedPath)
+			if apputils.CheckOrEmbedFlacLyrics(ctx, cfg.FFmpegPath, convertedPath, lrc, cfg.EmbedLrc) && track.LyricsSync == "none" {
+				track.LyricsSync = "line"
+			}
 			recordDownloadedTrack(ctx, track)
 			ctr.Inc(&ctr.Success)
 			rs.markDone(track.PreID, track.TaskNum)
