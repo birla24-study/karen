@@ -98,6 +98,7 @@ authorization-token: "your-authorization-token"
 language: ""
 lrc-type: "lyrics"
 lrc-format: "lrc"
+lyrics-provider: "${LYRICS_PROVIDER:-lrclib}"
 embed-lrc: true
 save-lrc-file: false
 save-artist-cover: false

@@ -9,6 +9,7 @@ type ConfigSet struct {
 	SaveLrcFile                bool    `yaml:"save-lrc-file"`
 	LrcType                    string  `yaml:"lrc-type"`
 	LrcFormat                  string  `yaml:"lrc-format"`
+	LyricsProvider             string  `yaml:"lyrics-provider"`
 	SaveAnimatedArtwork        bool    `yaml:"save-animated-artwork"`
 	EmbyAnimatedArtwork        bool    `yaml:"emby-animated-artwork"`
 	EmbedLrc                   bool    `yaml:"embed-lrc"`

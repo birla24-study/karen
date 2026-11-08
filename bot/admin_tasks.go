@@ -64,6 +64,7 @@ type UserPrefs struct {
 	Codec          string `json:"codec"`           // "" | alac | flac | aac | atmos
 	Quality        string `json:"quality"`         // "" | redbook | hires  (AlacMax/AtmosMax)
 	LyricMode      string `json:"lyric_mode"`      // "" | off | static | synced | word
+	LyricProvider  string `json:"lyric_provider,omitempty"` // "" | lrclib | netease
 	EmbedLrc       *bool  `json:"embed_lrc"`       // nil = inherit config default
 	CoverDelivery  string `json:"cover_delivery"`  // "" | photo | document
 	AnimatedArt    *bool  `json:"animated_art"`    // include motion artwork

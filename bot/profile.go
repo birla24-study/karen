@@ -40,6 +40,9 @@ var (
 	pfLyricChoices = []pfChoice{
 		{"", "Default"}, {"off", "Off"}, {"static", "Static"}, {"synced", "Line-synced"}, {"word", "Word-by-word"},
 	}
+	pfLyricProviderChoices = []pfChoice{
+		{"", "Default"}, {"lrclib", "LRCLIB (+NetEase)"}, {"netease", "NetEase only"},
+	}
 	pfCoverDelivChoices = []pfChoice{
 		{"", "Default"}, {"photo", "Photo"}, {"document", "Document"},
 	}
@@ -275,6 +278,8 @@ func applyProfileSet(p *UserPrefs, field, value string) {
 		p.AacType = toggleSame(p.AacType, value)
 	case "lyric_mode":
 		p.LyricMode = toggleSame(p.LyricMode, value)
+	case "lyric_provider":
+		p.LyricProvider = toggleSame(p.LyricProvider, value)
 	case "cover_delivery":
 		p.CoverDelivery = toggleSame(p.CoverDelivery, value)
 	case "delivery_target":
@@ -491,10 +496,14 @@ func audioSummaryRows(p UserPrefs) [][2]string {
 }
 
 func lyricsSummaryRows(p UserPrefs) [][2]string {
-	return [][2]string{
+	rows := [][2]string{
 		{"Lyrics", choiceLabel(pfLyricChoices, p.LyricMode)},
 		{"Embed lyrics", boolLabel(p.EmbedLrc)},
 	}
+	if p.LyricProvider != "" {
+		rows = append(rows, [2]string{"Provider", choiceLabel(pfLyricProviderChoices, p.LyricProvider)})
+	}
+	return rows
 }
 
 func artworkSummaryRows(p UserPrefs) [][2]string {
@@ -577,6 +586,8 @@ func (b *TelegramBot) profileMarkup(panel string, p UserPrefs) InlineKeyboardMar
 		return InlineKeyboardMarkup{InlineKeyboard: concatRows(
 			labelRow("Lyrics mode"),
 			choiceRows("lyric_mode", pfLyricChoices, p.LyricMode),
+			labelRow("Provider"),
+			choiceRows("lyric_provider", pfLyricProviderChoices, p.LyricProvider),
 			toggleRow("embed_lrc", "Embed lyrics", p.EmbedLrc),
 			backRow(),
 		)}

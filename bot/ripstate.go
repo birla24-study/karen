@@ -387,6 +387,9 @@ func applyPrefsToConfig(cfg *structs.ConfigSet, p *UserPrefs) {
 		cfg.SaveLrcFile = true
 		cfg.LrcType = "syllable-lyrics"
 	}
+	if p.LyricProvider != "" {
+		cfg.LyricsProvider = p.LyricProvider
+	}
 	if p.EmbedLrc != nil {
 		cfg.EmbedLrc = *p.EmbedLrc
 	}

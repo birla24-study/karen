@@ -49,10 +49,10 @@ func buildTrackMeta(path, format string, meta AudioMeta, hasMeta bool) catalog.T
 	}
 
 	lrc := "none"
-	if Config.EmbedLrc {
-		// We embed the richest available (time-synced) lyrics, which degrade to
-		// line-by-line in players that ignore word timing (§4.6). Descriptive only.
-		lrc = "word"
+	if hasMeta && meta.LyricsSync != "" {
+		lrc = meta.LyricsSync
+	} else if Config.EmbedLrc {
+		lrc = "line"
 	}
 
 	m := catalog.TrackMeta{

@@ -22,6 +22,7 @@ type Track struct {
 	DeviceM3u8 string
 	Quality    string
 	CoverPath  string
+	LyricsSync string // "line" | "none"
 
 	WorkerID string // decryption worker label shown on the live status board
 

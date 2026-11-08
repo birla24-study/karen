@@ -93,8 +93,9 @@ type AudioMeta struct {
 	// ISRC is the cross-source recording identity (catalog identity fallback after
 	// adamID, D6). AlbumID is the parent album's adamID (set for album rips), used
 	// for the album_zip artifact key. Both empty when unknown.
-	ISRC    string
-	AlbumID string
+	ISRC       string
+	AlbumID    string
+	LyricsSync string
 	// PlaylistName / PlaylistArtist are set only when the track was downloaded as
 	// part of a playlist, so the Telegram caption can show the playlist's identity
 	// instead of masquerading as the first track's album. Empty for albums/songs.
@@ -205,6 +206,7 @@ func recordDownloadedTrack(ctx context.Context, track *task.Track) {
 		Quality:        strings.TrimSpace(track.Quality),
 		Codec:          strings.TrimSpace(track.Codec),
 		ISRC:           strings.ToUpper(strings.TrimSpace(track.Resp.Attributes.Isrc)),
+		LyricsSync:     strings.TrimSpace(track.LyricsSync),
 	}
 	// For an album rip the parent is the album; PreID is its adamID (used as the
 	// album_zip artifact key). Playlists/stations have no album identity here.
@@ -1125,7 +1127,11 @@ func ripTrack(track *task.Track, token string, ctx context.Context) trackOutcome
 	filename := fmt.Sprintf("%s.m4a", forbiddenNames.ReplaceAllString(songName, "_"))
 	track.SaveName = filename
 	trackPath := filepath.Join(track.SaveDir, track.SaveName)
-	lrcFilename := fmt.Sprintf("%s.%s", forbiddenNames.ReplaceAllString(songName, "_"), cfg.LrcFormat)
+	lrcExt := cfg.LrcFormat
+	if lrcExt == "" || lrcExt == "ttml" {
+		lrcExt = "lrc"
+	}
+	lrcFilename := fmt.Sprintf("%s.%s", forbiddenNames.ReplaceAllString(songName, "_"), lrcExt)
 
 	var convertedPath string
 	conversionEnabled := cfg.ConvertAfterDownload &&
@@ -1139,11 +1145,23 @@ func ripTrack(track *task.Track, token string, ctx context.Context) trackOutcome
 		}
 	}
 	var lrc string = ""
+	track.LyricsSync = "none"
 	if cfg.EmbedLrc || cfg.SaveLrcFile {
-		lrcStr, err := lyrics.Get(track.Storefront, track.ID, cfg.LrcType, cfg.Language, cfg.LrcFormat, token, mediaUserToken())
+		lrcReq := lyrics.Request{
+			Title:       track.Resp.Attributes.Name,
+			Artist:      track.Resp.Attributes.ArtistName,
+			Album:       track.Resp.Attributes.AlbumName,
+			DurationSec: track.Resp.Attributes.DurationInMillis / 1000,
+			ISRC:        track.Resp.Attributes.Isrc,
+			Provider:    cfg.LyricsProvider,
+		}
+		lyrRes, err := lyrics.Fetch(ctx, lrcReq)
 		if err != nil {
-			fmt.Println(err)
-		} else {
+			fmt.Printf("[lyrics] Failed to fetch lyrics for %s - %s: %v\n", track.Resp.Attributes.ArtistName, track.Resp.Attributes.Name, err)
+		} else if lyrRes != nil && lyrRes.LRC != "" {
+			fmt.Printf("[lyrics] Retrieved %s-synced lyrics from %s for: %s - %s\n", lyrRes.SyncType, lyrRes.Provider, track.Resp.Attributes.ArtistName, track.Resp.Attributes.Name)
+			track.LyricsSync = lyrRes.SyncType
+			lrcStr := lyrRes.LRC
 			// "static" profile mode: fetch the timed lyrics, then strip the
 			// per-line "[mm:ss.xx]" timestamps so the saved .lrc is plain text.
 			if rs.lyricStripTimestamps() {
@@ -1152,12 +1170,14 @@ func ripTrack(track *task.Track, token string, ctx context.Context) trackOutcome
 			if cfg.SaveLrcFile {
 				err := writeLyrics(track.SaveDir, lrcFilename, lrcStr)
 				if err != nil {
-					fmt.Printf("Failed to write lyrics")
+					fmt.Printf("Failed to write lyrics: %v\n", err)
 				}
 			}
 			if cfg.EmbedLrc {
 				lrc = lrcStr
 			}
+		} else if lyrRes != nil && lyrRes.Instrumental {
+			fmt.Printf("[lyrics] Track is instrumental: %s - %s\n", track.Resp.Attributes.ArtistName, track.Resp.Attributes.Name)
 		}
 	}
 

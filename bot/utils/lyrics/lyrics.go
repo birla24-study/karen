@@ -1,6 +1,7 @@
 package lyrics
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,47 @@ type SongLyrics struct {
 			} `json:"playParams"`
 		} `json:"attributes"`
 	} `json:"data"`
+}
+
+// Fetch resolves synchronized lyrics by querying the preferred provider
+// (LRCLIB by default) and falling back to the secondary provider (NetEase).
+func Fetch(ctx context.Context, req Request) (*Result, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if req.Provider == "netease" {
+		// NetEase preferred
+		neRes, neErr := fetchNetEase(ctx, req)
+		if neErr == nil && neRes != nil && neRes.LRC != "" {
+			return neRes, nil
+		}
+		// Fallback to LRCLIB
+		res, err := fetchLRCLIB(ctx, req)
+		if err == nil && res != nil && (res.Instrumental || res.LRC != "") {
+			return res, nil
+		}
+		return nil, fmt.Errorf("no lyrics found (netease: %v; lrclib: %v)", neErr, err)
+	}
+
+	// Default: LRCLIB primary (sentence-by-sentence synced lyrics)
+	res, err := fetchLRCLIB(ctx, req)
+	if err == nil && res != nil {
+		if res.Instrumental {
+			return res, nil
+		}
+		if res.LRC != "" {
+			return res, nil
+		}
+	}
+
+	// Secondary fallback: NetEase Cloud Music
+	neRes, neErr := fetchNetEase(ctx, req)
+	if neErr == nil && neRes != nil && neRes.LRC != "" {
+		return neRes, nil
+	}
+
+	return nil, fmt.Errorf("no lyrics found (lrclib: %v; netease: %v)", err, neErr)
 }
 
 func Get(storefront, songId, lrcType, language, lrcFormat, token, mediaUserToken string) (string, error) {
