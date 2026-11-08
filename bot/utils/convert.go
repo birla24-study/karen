@@ -47,7 +47,7 @@ func buildFFmpegArgs(ffmpegPath, inPath, outPath, targetFmt, extraArgs string, c
 				"-map", "0:a",
 				"-map", "1:v",
 				"-c:a", "flac",
-				"-c:v", "mjpeg",
+				"-c:v", "copy",
 				"-disposition:v", "attached_pic",
 			)
 		} else {
@@ -154,6 +154,9 @@ func ConvertIfNeeded(track *task.Track, lrc string, cfg *structs.ConfigSet, cove
 	fmt.Printf("Conversion completed in %s: %s\n", time.Since(start).Truncate(time.Millisecond), filepath.Base(outPath))
 
 	if targetFmt == "flac" {
+		if coverPath != "" {
+			fmt.Printf("[cover] Embedded cover art in FLAC: %s\n", filepath.Base(outPath))
+		}
 		if lrc != "" {
 			fmt.Printf("[lyrics] Embedded lyrics in FLAC: %s\n", filepath.Base(outPath))
 		} else {

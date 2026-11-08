@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
 	"net/http"
@@ -133,6 +136,12 @@ func loadConfig() error {
 	}
 	if Config.BorrowerMaxTracks <= 0 {
 		Config.BorrowerMaxTracks = 30
+	}
+	if Config.CoverSize == "" {
+		Config.CoverSize = "5000x5000"
+	}
+	if Config.CoverFormat == "" {
+		Config.CoverFormat = "jpg"
 	}
 	return nil
 }
@@ -632,17 +641,31 @@ func checkArtist(artistUrl string, token string, relationship string) ([]string,
 	return args, nil
 }
 
-func writeCover(sanAlbumFolder, name string, url string) (string, error) {
-	originalUrl := url
-	var ext string
-	var covPath string
-	if Config.CoverFormat == "original" {
-		ext = strings.Split(url, "/")[len(strings.Split(url, "/"))-2]
-		ext = ext[strings.LastIndex(ext, ".")+1:]
-		covPath = filepath.Join(sanAlbumFolder, name+"."+ext)
-	} else {
-		covPath = filepath.Join(sanAlbumFolder, name+"."+Config.CoverFormat)
+func writeCover(sanAlbumFolder, name string, rawURL string) (string, error) {
+	if rawURL == "" {
+		return "", errors.New("empty cover artwork URL")
 	}
+	coverFormat := Config.CoverFormat
+	if coverFormat == "" {
+		coverFormat = "jpg"
+	}
+	coverSize := Config.CoverSize
+	if coverSize == "" {
+		coverSize = "5000x5000"
+	}
+
+	ext := coverFormat
+	if coverFormat == "original" {
+		ext = "jpg"
+		parts := strings.Split(rawURL, "/")
+		if len(parts) >= 2 {
+			sub := parts[len(parts)-2]
+			if dotIdx := strings.LastIndex(sub, "."); dotIdx != -1 {
+				ext = sub[dotIdx+1:]
+			}
+		}
+	}
+	covPath := filepath.Join(sanAlbumFolder, name+"."+ext)
 	exists, err := fileExists(covPath)
 	if err != nil {
 		fmt.Println("Failed to check if cover exists.")
@@ -651,63 +674,95 @@ func writeCover(sanAlbumFolder, name string, url string) (string, error) {
 	if exists {
 		_ = os.Remove(covPath)
 	}
-	if Config.CoverFormat == "png" {
-		re := regexp.MustCompile(`\{w\}x\{h\}`)
-		parts := re.Split(url, 2)
-		url = parts[0] + "{w}x{h}" + strings.Replace(parts[1], ".jpg", ".png", 1)
-	}
-	url = strings.Replace(url, "{w}x{h}", Config.CoverSize, 1)
-	if Config.CoverFormat == "original" {
-		url = strings.Replace(url, "is1-ssl.mzstatic.com/image/thumb", "a5.mzstatic.com/us/r1000/0", 1)
-		url = url[:strings.LastIndex(url, "/")]
-	}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-	do, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer do.Body.Close()
-	if do.StatusCode != http.StatusOK {
-		if Config.CoverFormat == "original" {
-			fmt.Println("Failed to get cover, falling back to " + ext + " url.")
-			splitByDot := strings.Split(originalUrl, ".")
-			last := splitByDot[len(splitByDot)-1]
-			fallback := originalUrl[:len(originalUrl)-len(last)] + ext
-			fallback = strings.Replace(fallback, "{w}x{h}", Config.CoverSize, 1)
-			fmt.Println("Fallback URL:", fallback)
-			req, err = http.NewRequest("GET", fallback, nil)
-			if err != nil {
-				fmt.Println("Failed to create request for fallback url.")
-				return "", err
-			}
-			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-			do, err = http.DefaultClient.Do(req)
-			if err != nil {
-				fmt.Println("Failed to get cover from fallback url.")
-				return "", err
-			}
-			defer do.Body.Close()
-			if do.StatusCode != http.StatusOK {
-				fmt.Println(fallback)
-				return "", errors.New(do.Status)
-			}
-		} else {
-			return "", errors.New(do.Status)
+
+	// Build candidate URLs in order of preference (highest quality uncompressed master first).
+	var candidates []string
+
+	// Candidate 1: The Apple CDN 10000x10000-999 master parameter.
+	// This requests the uncompressed source file at maximum resolution (up to 10k)
+	// with full 4:4:4 chroma subsampling (Quality 100).
+	if strings.Contains(rawURL, "{w}x{h}bb.") {
+		u := strings.Replace(rawURL, "{w}x{h}bb.", "10000x10000-999.", 1)
+		if coverFormat == "png" {
+			u = strings.Replace(u, ".jpg", ".png", 1)
 		}
+		candidates = append(candidates, u)
+	} else if strings.Contains(rawURL, "{w}x{h}") {
+		u := strings.Replace(rawURL, "{w}x{h}", "10000x10000-999", 1)
+		if coverFormat == "png" {
+			u = strings.Replace(u, ".jpg", ".png", 1)
+		}
+		candidates = append(candidates, u)
 	}
+
+	// Candidate 2: Standard high-res bounding box (e.g. 5000x5000bb.ext or configured CoverSize).
+	{
+		u := rawURL
+		if coverFormat == "png" && strings.Contains(u, ".jpg") {
+			re := regexp.MustCompile(`\{w\}x\{h\}`)
+			parts := re.Split(u, 2)
+			if len(parts) == 2 {
+				u = parts[0] + "{w}x{h}" + strings.Replace(parts[1], ".jpg", ".png", 1)
+			}
+		}
+		u = strings.Replace(u, "{w}x{h}", coverSize, 1)
+		candidates = append(candidates, u)
+	}
+
+	// Candidate 3: Standard fallback with 3000x3000bb.jpg
+	if coverSize != "3000x3000" {
+		u := strings.Replace(rawURL, "{w}x{h}", "3000x3000", 1)
+		candidates = append(candidates, u)
+	}
+
+	client := &http.Client{Timeout: 45 * time.Second}
+	var resp *http.Response
+	var lastErr error
+	for _, targetURL := range candidates {
+		req, err := http.NewRequest("GET", targetURL, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+		r, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if r.StatusCode == http.StatusOK {
+			resp = r
+			break
+		}
+		r.Body.Close()
+	}
+
+	if resp == nil {
+		if lastErr != nil {
+			return "", fmt.Errorf("failed to download cover: %v", lastErr)
+		}
+		return "", errors.New("failed to download cover: all candidate URLs returned non-200")
+	}
+	defer resp.Body.Close()
+
 	f, err := os.Create(covPath)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-	_, err = io.Copy(f, do.Body)
+	_, err = io.Copy(f, resp.Body)
+	_ = f.Close()
 	if err != nil {
 		return "", err
 	}
+
+	// Log the actual downloaded resolution
+	if imgF, err := os.Open(covPath); err == nil {
+		if imgCfg, _, err := image.DecodeConfig(imgF); err == nil {
+			fmt.Printf("[cover] Downloaded cover art (%dx%d): %s\n", imgCfg.Width, imgCfg.Height, filepath.Base(covPath))
+		}
+		_ = imgF.Close()
+	}
+
 	return covPath, nil
 }
 
@@ -770,8 +825,15 @@ func handleSearch(searchType string, queryParts []string, token string) (string,
 
 func convertIfNeeded(cfg *structs.ConfigSet, track *task.Track, lrc string, progress apputils.ProgressFunc) {
 	coverPath := ""
-	if strings.EqualFold(cfg.ConvertFormat, "flac") && track.SaveDir != "" {
-		coverPath = findCoverFile(track.SaveDir)
+	if strings.EqualFold(cfg.ConvertFormat, "flac") {
+		if track.CoverPath != "" {
+			if _, err := os.Stat(track.CoverPath); err == nil {
+				coverPath = track.CoverPath
+			}
+		}
+		if coverPath == "" && track.SaveDir != "" {
+			coverPath = findCoverFile(track.SaveDir)
+		}
 	}
 	apputils.ConvertIfNeeded(track, lrc, cfg, coverPath, progress)
 }
@@ -1335,12 +1397,12 @@ func ripTrack(track *task.Track, token string, ctx context.Context) trackOutcome
 		return trackRetryableFailure
 	}
 
+	convertIfNeeded(&cfg, track, lrc, trackProgress)
+
 	// Clean up per-track cover written above (not the shared album cover).
 	if cfg.EmbedCover && (strings.Contains(track.PreID, "pl.") || strings.Contains(track.PreID, "ra.")) && Config.DlAlbumcoverForPlaylist {
 		_ = os.Remove(track.CoverPath)
 	}
-
-	convertIfNeeded(&cfg, track, lrc, trackProgress)
 
 	recordDownloadedTrack(ctx, track)
 	ctr.Inc(&ctr.Success)
@@ -2315,6 +2377,7 @@ func writeMP4Tags(track *task.Track, lrc string) error {
 			t.Pictures = []*mp4tag.MP4Picture{
 				{Data: coverData},
 			}
+			fmt.Printf("[cover] Embedded cover art in M4A: %s\n", filepath.Base(track.SavePath))
 		}
 	}
 

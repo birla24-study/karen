@@ -6848,8 +6848,10 @@ func formatTelegramCaption(sizeBytes int64, bitrateKbps float64, format string) 
 func findCoverFile(dir string) string {
 	candidates := []string{
 		"cover.jpg",
+		"cover.jpeg",
 		"cover.png",
 		"folder.jpg",
+		"folder.jpeg",
 		"folder.png",
 	}
 	for _, name := range candidates {
